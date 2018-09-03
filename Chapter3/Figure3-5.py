@@ -20,7 +20,7 @@ class Grid_World(object):
 
         next_state = state + action
         x_axis, y_axis = next_state
-        if x_axis < 0 or x_axis > 4 or y_axis < 0 or y_axis > 4:
+        if x_axis < 0 or x_axis > self.size-1 or y_axis < 0 or y_axis > self.size-1:
             reward = -1
             next_state = state
         else:
