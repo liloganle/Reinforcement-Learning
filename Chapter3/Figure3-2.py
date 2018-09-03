@@ -1,7 +1,6 @@
 # -*- coding:utf-8 -*-
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 class Grid_World(object):
     def __init__(self, size=5, gama=0.9):
