@@ -3,6 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import seaborn as sns
 
 class Blackjack(object):
     def __init__(self):
@@ -15,7 +16,7 @@ class Blackjack(object):
         self.policy_player[20:] = self.action_stop
         self.policy_dealer[17:] = self.action_stop
 
-    def target_policy_player(self, sum_player):
+    def target_policy_player(self, sum_player, usable_ace, dealer_card):
         return self.policy_player[sum_player]
 
     def behavior_policy_player(self):
@@ -59,7 +60,7 @@ class Blackjack(object):
         state = [sum_player, usable_ace_player, card1_dealer]  # initialize the state of game
         return state, card2_dealer
 
-    def generate_episode(self, initial_state=None, initial_action=None):
+    def generate_episode(self, policy_player, initial_state=None, initial_action=None):
         sum_dealer = 0  # sum of dealer's card
         trajectory_player = []  # the player's trajectory
         usable_ace_dealer = False  #type: bool #whether dealer count ace as 11 or not
@@ -89,7 +90,8 @@ class Blackjack(object):
                 action = initial_action
                 initial_action = None
             else:
-                action = self.policy_player[sum_player]   #get an action base on current sum of player's card
+                action = policy_player(sum_player, usable_ace_player, card1_dealer)
+                #get an action base on current sum of player's card
             trajectory_player.append([(sum_player, usable_ace_player, card1_dealer), action])
 
             if action == self.action_stop:
@@ -134,44 +136,61 @@ class Blackjack(object):
         else:
             return state, -1, trajectory_player
 
-    def first_visit_MC(self, episodes=10000):
-        state_usable_ace = np.zeros((10, 10))
-        state_usable_ace_count = np.ones(state_usable_ace.shape)
-        state_no_usable_ace = np.zeros((10, 10))
-        state_no_usable_ace_count = np.ones(state_no_usable_ace.shape)
+    def exploring_start_MC(self, episodes=10000):
+        state_action_value = np.zeros((10, 2, 10, 2))   # (playerSum, usable, dealerCard, action)
+        state_action_pair_count = np.ones(state_action_value.shape)
+
+        def greedy_policy(sum_player, usable_ace, dealer_card):
+            sum_player -= 12
+            usable_ace = int(usable_ace)
+            dealer_card -= 1
+            values = state_action_value[sum_player, usable_ace, dealer_card, :] /\
+                    state_action_pair_count[sum_player, usable_ace, dealer_card]
+            return np.random.choice([act for act, value in enumerate(values) if value == np.max(values)])
 
         for ite in np.arange(episodes):
-            _, reward, trajectory = self.generate_episode()
-            for (sum_player, usable_ace, dealer_showing), _ in trajectory:
+            #randomly select initialized state and action for each episode
+            initial_state = [np.random.choice(range(12, 22)), bool(np.random.choice([0, 1])),
+                             np.random.choice(range(1, 11))]
+            initial_action = np.random.choice([self.action_hit, self.action_stop])
+            policy_player = greedy_policy if ite else self.target_policy_player
+            _, reward, trajectory = self.generate_episode(policy_player, initial_state, initial_action)
+            for (sum_player, usable_ace, dealer_showing), action in trajectory:
                 sum_player -= 12
+                usable_ace = int(usable_ace)
                 dealer_showing -= 1
-                if usable_ace:
-                    state_usable_ace[sum_player, dealer_showing] += reward
-                    state_usable_ace_count[sum_player, dealer_showing] += 1
-                else:
-                    state_no_usable_ace[sum_player, dealer_showing] += reward
-                    state_no_usable_ace_count[sum_player, dealer_showing] += 1
-        return state_usable_ace/state_usable_ace_count, state_no_usable_ace/state_no_usable_ace_count
+                #update the values and pair counts
+                state_action_value[sum_player, usable_ace, dealer_showing, action] += reward
+                state_action_pair_count[sum_player, usable_ace, dealer_showing, action] += 1
+        return state_action_value/state_action_pair_count
 
 
 def draw_image(states_mat, lables):
 
-    print("Starting drawing......")
     x_size, y_size = states_mat[0].shape
     x_axis = np.arange(1, x_size + 1)
     y_axis = np.arange(12, y_size + 12)
     x_axis, y_axis = np.meshgrid(x_axis, y_axis)
     nums = np.arange(len(lables))
 
-    fig = plt.figure(figsize=(10, 10))
+    print("Starting drawing......")
+    fig = plt.figure(figsize=(14, 10))
     for state, lable, num in zip(states_mat, lables, nums):
-        ax = fig.add_subplot(221+num, projection='3d')
-        ax.plot_wireframe(X=x_axis, Y=y_axis, Z=state)
-        plt.xlabel("Dealer showing")
-        plt.ylabel("Player sum")
-        plt.title(lable)
+        if num % 2 == 0:
+            axis = fig.add_subplot(221+num)
+            sns.heatmap(np.flipud(state), cmap="GnBu", ax=axis, xticklabels=np.arange(1, 11),
+                        yticklabels=np.arange(21, 11, -1))
+            plt.xlabel("Dealer showing")
+            plt.ylabel("Player sum")
+            plt.title(lable)
+        else:
+            axis = fig.add_subplot(221+num, projection='3d')
+            axis.plot_wireframe(X=x_axis, Y=y_axis, Z=state)
+            plt.xlabel("Dealer showing")
+            plt.ylabel("Player sum")
+            plt.title(lable)
 
-    plt.savefig("./images/Figure5-1.jpg", bbox="tight")
+    plt.savefig("./images/Figure5-2.jpg", bbox="tight")
     plt.close()
     print("Completed !!! You can check it in the 'images' directory.")
 
@@ -179,14 +198,21 @@ def draw_image(states_mat, lables):
 if __name__ == "__main__":
     blackjack_game = Blackjack()
     print("The Blackjack Game is starting......")
-    first_usable_ace, first_no_usable_ace = blackjack_game.first_visit_MC(episodes=10000)
-    second_usable_ace, second_no_usable_ace = blackjack_game.first_visit_MC(episodes=500000)
+    state_action_value = blackjack_game.exploring_start_MC(episodes=500000)
     print("Game Over !!!\n")
 
-    states = [first_usable_ace, second_usable_ace,
-              first_no_usable_ace, second_no_usable_ace]
-    lables = ["Usable Ace, 10000 episodes", "Usable Ace, 500000 episodes",
-              "No Usable Ace, 10000 episodes", "No Usable Ace, 500000 episodes"]
+    #to get the max state-action value
+    state_action_value_no_usable = np.max(state_action_value[:, 0, :, :], axis=2)
+    state_action_value_usable = np.max(state_action_value[:, 1, :, :], axis=2)
+    #to get the optimal policy
+    policy_no_usable = np.argmax(state_action_value[:, 0, :, :], axis=2)
+    policy_usable = np.argmax(state_action_value[:, 1, :, :], axis=2)
+
+    states = [policy_usable, state_action_value_usable,
+              policy_no_usable, state_action_value_no_usable]
+    lables = ["Usable Ace, Optimal policy", "Usable Ace, Optimal state-action value",
+              "No Usable Ace, Optimal policy", "No Usable Ace, Optimal state-action value"]
+
     draw_image(states, lables)
 
 

@@ -3,6 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import seaborn as sns
 
 class Blackjack(object):
     def __init__(self):
@@ -15,10 +16,10 @@ class Blackjack(object):
         self.policy_player[20:] = self.action_stop
         self.policy_dealer[17:] = self.action_stop
 
-    def target_policy_player(self, sum_player):
+    def target_policy_player(self, sum_player, usable_ace, dealer_card):
         return self.policy_player[sum_player]
 
-    def behavior_policy_player(self):
+    def behavior_policy_player(self, sum_player, usable_ace, dealer_card):
         rand_num = np.random.binomial(1, 0.5)
         if rand_num:
             return self.action_hit
@@ -59,7 +60,8 @@ class Blackjack(object):
         state = [sum_player, usable_ace_player, card1_dealer]  # initialize the state of game
         return state, card2_dealer
 
-    def generate_episode(self, initial_state=None, initial_action=None):
+    def generate_episode(self, policy_player, initial_state=None, initial_action=None):
+        #@policy_player: type:function
         sum_dealer = 0  # sum of dealer's card
         trajectory_player = []  # the player's trajectory
         usable_ace_dealer = False  #type: bool #whether dealer count ace as 11 or not
@@ -89,7 +91,8 @@ class Blackjack(object):
                 action = initial_action
                 initial_action = None
             else:
-                action = self.policy_player[sum_player]   #get an action base on current sum of player's card
+                action = policy_player(sum_player, usable_ace_player, card1_dealer)
+                #get an action base on current sum of player's card
             trajectory_player.append([(sum_player, usable_ace_player, card1_dealer), action])
 
             if action == self.action_stop:
@@ -134,60 +137,72 @@ class Blackjack(object):
         else:
             return state, -1, trajectory_player
 
-    def first_visit_MC(self, episodes=10000):
-        state_usable_ace = np.zeros((10, 10))
-        state_usable_ace_count = np.ones(state_usable_ace.shape)
-        state_no_usable_ace = np.zeros((10, 10))
-        state_no_usable_ace_count = np.ones(state_no_usable_ace.shape)
+    def off_policy_MC(self, episodes=10000):
+        sum_player = 13
+        usable_ace = True
+        card1 = 2
+
+        rhos = []
+        rewards = []
+        initial_state = [sum_player, usable_ace, card1]
 
         for ite in np.arange(episodes):
-            _, reward, trajectory = self.generate_episode()
-            for (sum_player, usable_ace, dealer_showing), _ in trajectory:
-                sum_player -= 12
-                dealer_showing -= 1
-                if usable_ace:
-                    state_usable_ace[sum_player, dealer_showing] += reward
-                    state_usable_ace_count[sum_player, dealer_showing] += 1
+            numerator = 1   #the numerator of importance-sampling ratio
+            denominator = 1   #the denominator of importance-sampling ratio
+
+            _, reward, trajectory = self.generate_episode(self.behavior_policy_player, initial_state)
+            for (sum_player, usable_ace, dealer_showing), action in trajectory:
+                if action == self.target_policy_player(sum_player, usable_ace, dealer_showing):
+                    denominator *= 0.5
                 else:
-                    state_no_usable_ace[sum_player, dealer_showing] += reward
-                    state_no_usable_ace_count[sum_player, dealer_showing] += 1
-        return state_usable_ace/state_usable_ace_count, state_no_usable_ace/state_no_usable_ace_count
+                    numerator = 0
+                    break
+            rho = numerator / denominator
+            rhos.append(rho)
+            rewards.append(reward)
 
+        rhos = np.asarray(rhos)
+        rewards = np.asarray(rewards)
+        weighted_rewards = rhos * rewards
+        rhos = np.add.accumulate(rhos)   #to accumulate the importance-sampling ratio
+        weighted_returns = np.add.accumulate(weighted_rewards)   #to accumulate the reward
 
-def draw_image(states_mat, lables):
+        ordinary_importance_sampling = weighted_returns / np.arange(1, episodes+1)
+        weighted_importance_sampling = weighted_returns / (rhos+1e-7)   #to avoid dividing zero
 
-    print("Starting drawing......")
-    x_size, y_size = states_mat[0].shape
-    x_axis = np.arange(1, x_size + 1)
-    y_axis = np.arange(12, y_size + 12)
-    x_axis, y_axis = np.meshgrid(x_axis, y_axis)
-    nums = np.arange(len(lables))
+        return ordinary_importance_sampling, weighted_importance_sampling
 
-    fig = plt.figure(figsize=(10, 10))
-    for state, lable, num in zip(states_mat, lables, nums):
-        ax = fig.add_subplot(221+num, projection='3d')
-        ax.plot_wireframe(X=x_axis, Y=y_axis, Z=state)
-        plt.xlabel("Dealer showing")
-        plt.ylabel("Player sum")
-        plt.title(lable)
-
-    plt.savefig("./images/Figure5-1.jpg", bbox="tight")
-    plt.close()
-    print("Completed !!! You can check it in the 'images' directory.")
 
 
 if __name__ == "__main__":
+    true_value = -0.27726
+    iteration = 10000
+    runs = 100
+    error_ordinary_sampling = np.zeros(iteration)
+    error_weighted_sampling = np.zeros(iteration)
+
     blackjack_game = Blackjack()
     print("The Blackjack Game is starting......")
-    first_usable_ace, first_no_usable_ace = blackjack_game.first_visit_MC(episodes=10000)
-    second_usable_ace, second_no_usable_ace = blackjack_game.first_visit_MC(episodes=500000)
+    for iters in np.arange(runs):
+        ordinary_sampling, weighted_sampling = blackjack_game.off_policy_MC(episodes=iteration)
+        error_ordinary_sampling += np.power(ordinary_sampling-true_value, 2)
+        error_weighted_sampling += np.power(weighted_sampling-true_value, 2)
     print("Game Over !!!\n")
+    error_ordinary_sampling /= runs
+    error_weighted_sampling /= runs
 
-    states = [first_usable_ace, second_usable_ace,
-              first_no_usable_ace, second_no_usable_ace]
-    lables = ["Usable Ace, 10000 episodes", "Usable Ace, 500000 episodes",
-              "No Usable Ace, 10000 episodes", "No Usable Ace, 500000 episodes"]
-    draw_image(states, lables)
+    print("Starting drawing......")
+    plt.plot(np.arange(1, iteration+1), error_ordinary_sampling, label="Ordinary importance sampling")
+    plt.plot(np.arange(1, iteration+1), error_weighted_sampling, label="Weighted importance sampling")
+    plt.xlabel("Episodes (log scale)")
+    plt.ylabel("Mean Square Error")
+    plt.xscale("log")
+    plt.legend()
+    plt.savefig("./images/Figure5-3.jpg")
+    plt.show()
+
+    print("Completed !!! You can check it in the 'images' directory.")
+    plt.close()
 
 
 
