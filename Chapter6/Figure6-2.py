@@ -16,7 +16,7 @@ def find_next_state(current_state):
 
 
 class Random_Walk_Batch_Update(object):
-    def __init__(self, initial_state=3, num_state=7, step_size=1e-4):
+    def __init__(self, initial_state=3, num_state=7, step_size=0.001):
         self.initial_state = initial_state  # start in the center state, C, state number is 3
         self.num_state = num_state  # the number of states
         self.step_size = step_size  # the step_size is the step size
@@ -42,8 +42,8 @@ class Random_Walk_Batch_Update(object):
         while True:
             next_state = find_next_state(state)  # to find the next state
             reward = 0
-            if next_state == self.states[-1]:
-                reward = 1
+            # if next_state == self.states[-1]:
+            #    reward = 1
 
             rewards.append(reward)
             trajectory.append(next_state)
@@ -82,52 +82,63 @@ class Random_Walk_Batch_Update(object):
 
         return trajectory, [returns] * (len(trajectory) - 1)
 
-    def batch_update_rsm(self, episode=100, runs=100, method_flag=False):
+    def batch_update_rsm(self, episodes=100, runs=100, method_flag=False):
         """
         to compute the root mean-squared error of batch updating
-        :param episode: the number of episodes
+        :param episodes: the number of episodes
         :param runs: the number of runs
-        :param method_flag: whether use MC method or TD method
+        :param method_flag: whether use MC method or TD method, default method is TD
         :return:
         """
-        error_rms = np.zeros(episode + 1)
+        error_rms = np.zeros(episodes + 1)
         for run in tqdm(range(runs)):
             current_value = self.initial_value.copy()
-            error = []
-            for idx in np.arange(episode + 1):
-                if method_flag:                                                # Monte Carlo method if True
+            trajectory = []
+            rewards = []
+            for idx in range(episodes + 1):
+                # Monte Carlo method if True
+                if method_flag:
                     list_trajectory, list_rewards = self.monte_carlo()
-                else:                                                          # default method is temporal-difference
+                # default method is temporal-difference
+                else:
                     list_trajectory, list_rewards = self.temporal_difference()
+                trajectory.append(list_trajectory)
+                rewards.append(list_rewards)
+
                 while True:
                     temp_array = np.zeros(self.num_state)
-                    for track, rew in zip([list_trajectory], [list_rewards]):
-                        for i in np.arange(len(track) - 1):
-                            if method_flag:                                     # Monte Carlo method if True
-                                temp_array[track[i]] += rew[i] - current_value[track[i]]
-                            else:                                               # default method is temporal-difference
-                                temp_array[track[i]] += rew[i] + current_value[track[i+1]] - current_value[track[i]]
+                    for track, reward in zip(trajectory, rewards):
+                        for i in range(len(track) - 1):
+                            if method_flag:                     # Monte Carlo method if True
+                                temp_array[track[i]] += reward[i] - current_value[track[i]]
+                            else:                                       # default method is temporal-difference
+                                temp_array[track[i]] += reward[i] + current_value[track[i+1]] - \
+                                                        current_value[track[i]]
                     temp_array *= self.step_size
-                    if np.linalg.norm(temp_array) < 1e-4:
+                    current_value += temp_array  # batch updating for state value
+                    if np.sum(np.abs(temp_array)) < 1e-3:
                         break
-                    current_value += temp_array    # batch updating for state value
-                # error_rms[idx] += np.sqrt(np.linalg.norm(current_value-self.real_value)**2/len(current_value[1:-1]))
-                error.append(np.sqrt(np.linalg.norm(current_value-self.real_value)**2/len(current_value[1:-1])))
-            error_rms += np.asarray(error)
+
+                error_rms[idx] += np.sqrt(np.linalg.norm(current_value-self.real_value)**2/
+                                          len(current_value[1:-1]))
+
         error_rms /= runs  # to average the error
         return error_rms
 
 
+
+
 if __name__ == "__main__":
     random_walk_batch_update = Random_Walk_Batch_Update()
-
+    # td_error_rsm = batch_updating("TD")
+    # mc_error_rsm = batch_updating("MC")
     td_error_rsm = random_walk_batch_update.batch_update_rsm(method_flag=False)
     mc_error_rsm = random_walk_batch_update.batch_update_rsm(method_flag=True)
 
-    print("Starting plotting the figure......\n")
-    plt.plot(td_error_rsm, label=r"TD")
-    plt.plot(mc_error_rsm, label=r"MC")
+    plt.plot(td_error_rsm[1:], label=r"TD", color="b")
+    plt.plot(mc_error_rsm[1:], label=r"MC", color="r")
     plt.legend()
     plt.savefig("./images/Figure6-2.png")
     plt.show()
     plt.close()
+    print("Completed!!! You can check it in the 'images' directory!")
