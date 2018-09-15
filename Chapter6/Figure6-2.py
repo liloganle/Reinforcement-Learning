@@ -82,61 +82,63 @@ class Random_Walk_Batch_Update(object):
 
         return trajectory, [returns] * (len(trajectory) - 1)
 
-    def batch_update_rsm(self, episodes=100, runs=100, method_flag=False):
+    def batch_update_rsm(self, episodes=100, method_flag=False):
         """
         to compute the root mean-squared error of batch updating
         :param episodes: the number of episodes
-        :param runs: the number of runs
         :param method_flag: whether use MC method or TD method, default method is TD
         :return:
         """
-        error_rms = np.zeros(episodes + 1)
-        for run in tqdm(range(runs)):
-            current_value = self.initial_value.copy()
-            trajectory = []
-            rewards = []
-            for idx in range(episodes + 1):
-                # Monte Carlo method if True
-                if method_flag:
-                    list_trajectory, list_rewards = self.monte_carlo()
-                # default method is temporal-difference
-                else:
-                    list_trajectory, list_rewards = self.temporal_difference()
-                trajectory.append(list_trajectory)
-                rewards.append(list_rewards)
+        error_rms = np.zeros(episodes)
+        current_value = self.initial_value.copy()
+        trajectory = []
+        rewards = []
+        for idx in range(episodes):
+            # Monte Carlo method if True
+            if method_flag:
+                list_trajectory, list_rewards = self.monte_carlo()
+            # default method is temporal-difference
+            else:
+                list_trajectory, list_rewards = self.temporal_difference()
+            trajectory.append(list_trajectory)
+            rewards.append(list_rewards)
 
-                while True:
-                    temp_array = np.zeros(self.num_state)
-                    for track, reward in zip(trajectory, rewards):
-                        for i in range(len(track) - 1):
-                            if method_flag:                     # Monte Carlo method if True
-                                temp_array[track[i]] += reward[i] - current_value[track[i]]
-                            else:                                       # default method is temporal-difference
-                                temp_array[track[i]] += reward[i] + current_value[track[i+1]] - \
-                                                        current_value[track[i]]
-                    temp_array *= self.step_size
-                    current_value += temp_array  # batch updating for state value
-                    if np.sum(np.abs(temp_array)) < 1e-3:
-                        break
+            while True:
+                temp_array = np.zeros(self.num_state)
+                for track, reward in zip(trajectory, rewards):
+                    for i in range(len(track) - 1):
+                        if method_flag:                     # Monte Carlo method if True
+                            temp_array[track[i]] += reward[i] - current_value[track[i]]
+                        else:                                       # default method is temporal-difference
+                            temp_array[track[i]] += reward[i] + current_value[track[i+1]] - \
+                                                    current_value[track[i]]
+                temp_array *= self.step_size
+                current_value += temp_array  # batch updating for state value
+                if np.sum(np.abs(temp_array)) < 1e-3:
+                    break
 
-                error_rms[idx] += np.sqrt(np.linalg.norm(current_value-self.real_value)**2/
-                                          len(current_value[1:-1]))
+            error_rms[idx] += np.sqrt(np.linalg.norm(current_value-self.real_value)**2 /
+                                      len(current_value[1:-1]))
 
-        error_rms /= runs  # to average the error
         return error_rms
 
 
 
 
 if __name__ == "__main__":
+    runs = 100    # the number of runs
+    epi = 100    # the number of episodes
     random_walk_batch_update = Random_Walk_Batch_Update()
-    # td_error_rsm = batch_updating("TD")
-    # mc_error_rsm = batch_updating("MC")
-    td_error_rsm = random_walk_batch_update.batch_update_rsm(method_flag=False)
-    mc_error_rsm = random_walk_batch_update.batch_update_rsm(method_flag=True)
+    td_error_rsm = 0
+    mc_error_rsm = 0
 
-    plt.plot(td_error_rsm[1:], label=r"TD", color="b")
-    plt.plot(mc_error_rsm[1:], label=r"MC", color="r")
+    for run in tqdm(range(runs)):
+        td_error_rsm += random_walk_batch_update.batch_update_rsm(episodes=epi, method_flag=False)
+        mc_error_rsm += random_walk_batch_update.batch_update_rsm(episodes=epi, method_flag=True)
+
+    plt.plot(td_error_rsm/runs, label=r"TD", color="b")
+    plt.plot(mc_error_rsm/runs, label=r"MC", color="r")
+    plt.xlim([0, 100])
     plt.legend()
     plt.savefig("./images/Figure6-2.png")
     plt.show()
