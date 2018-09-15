@@ -18,7 +18,7 @@ class Windy_Grid_World(object):
         self.wind = np.array([0, 0, 0, 1, 1, 1, 2, 2, 1, 0])    # the strength of wind for every column
 
     def epsilon_greedy(self, q_value, state):
-        rand_num = np.random.randn()
+        rand_num = np.random.rand()
         if rand_num < self.epsilon:
             return np.random.choice(self.actions)
         else:
