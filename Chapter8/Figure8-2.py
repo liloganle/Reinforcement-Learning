@@ -64,10 +64,15 @@ class DynaMaze(object):
 
         return next_state, reward
 
-    def tabular_dyna_q(self, q_value):
+    def tabular_dyna_q(self, q_value, model):
+        """
+        the Tabular Dyna-Q algorithm
+        :param q_value:
+        :param model: the model to store the previous experience
+        :return:
+        """
         state = self.start      # the start state
         steps = 0               # the number of steps
-        model = {}              # the model to store the previous experience
 
         while any(state != self.goal):              # !!!!!!
             steps += 1  # tracking the number of steps per episode
@@ -77,10 +82,10 @@ class DynaMaze(object):
             max_value = np.max(q_value[:, next_state[0], next_state[1]])
             q_value[action, state[0], state[1]] += self.alpha*(reward + self.gama*max_value -
                                                                q_value[action, state[0], state[1]])
-            building(model, state, action, next_state, reward)           # building the model
+            model.building(state, action, next_state, reward)           # building the model
             # sampling from the model
             for num in range(self.planning_steps):
-                sta, act, next_sta, rew = sampling(model)               # sampling from model
+                sta, act, next_sta, rew = model.sampling()               # sampling from model
                 # Q-learning algorithm to update the state-action value
                 max_val = np.max(q_value[:, next_sta[0], next_sta[1]])
                 q_value[act, sta[0], sta[1]] += self.alpha*(rew + self.gama*max_val -
@@ -89,34 +94,35 @@ class DynaMaze(object):
         return steps
 
 
-def building(model, state, action, next_state, reward):
-    """
-    building the model according to the previous experiences
-    :param model: type:dict
-    :param state: the current state
-    :param action: the selected action under the current state
-    :param next_state:
-    :param reward:
-    :return:
-    """
-    if tuple(state) not in model.keys():
-        model[tuple(state)] = {}
-    model[tuple(state)][action] = [tuple(next_state), reward]
+class Model(object):
+    def __init__(self):
+        self.model = {}
 
+    def building(self, state, action, next_state, reward):
+        """
+        building the model according to the previous experiences
+        :param state: the current state
+        :param action: the selected action under the current state
+        :param next_state:
+        :param reward:
+        :return:
+        """
+        if tuple(state) not in self.model.keys():
+            self.model[tuple(state)] = {}
+        self.model[tuple(state)][action] = [tuple(next_state), reward]
 
-def sampling(model):
-    """
-    random previously observed state and action
-    :param model: type:dict
-    :return:
-    """
-    state_index = np.random.choice(range(len(model.keys())))
-    current_state = list(model)[state_index]
-    action_index = np.random.choice(range(len(model[current_state].keys())))
-    action = list(model[current_state])[action_index]
-    next_state, reward = model[current_state][action]
+    def sampling(self):
+        """
+        random previously observed state and action
+        :return:
+        """
+        state_index = np.random.choice(range(len(self.model.keys())))
+        current_state = list(self.model)[state_index]
+        action_index = np.random.choice(range(len(self.model[current_state].keys())))
+        action = list(self.model[current_state])[action_index]
+        next_state, reward = self.model[current_state][action]
 
-    return np.array(current_state), action, np.array(next_state), reward
+        return np.array(current_state), action, np.array(next_state), reward
 
 
 if __name__ == "__main__":
@@ -124,6 +130,7 @@ if __name__ == "__main__":
     episodes = 50   # the number of episodes
 
     plan_steps = [0, 5, 50]
+    original_model = Model()
     all_runs_steps = np.zeros((len(plan_steps), episodes))
 
     for run in tqdm(range(runs)):
@@ -131,7 +138,7 @@ if __name__ == "__main__":
             dyna_maze = DynaMaze(planning_steps=planning)
             q_values = dyna_maze.q_value.copy()
             for ep in range(episodes):
-                all_runs_steps[idx, ep] += dyna_maze.tabular_dyna_q(q_values)
+                all_runs_steps[idx, ep] += dyna_maze.tabular_dyna_q(q_values, original_model)
     all_runs_steps /= runs
     # print(q_values)
 
