@@ -11,14 +11,14 @@ class RandomWalk(object):
         self.groups = groups                    # the number of groups
         self.alpha = alpha                      # the step size
 
-        self.group_size = num_states // groups          # the size of group
-        self.parameters = np.zeros(groups)
+        self.group_value = np.zeros(groups)                # the value of each group
+        self.group_size = int(num_states / groups)          # the size of each group
 
-        self.states = np.arange(1, num_states+1)        # all states
-        self.action = [-1, 1]                   # right:1, left:-1
-        self.start_state = 500                  # the start state
-        self.neighbors = 100                    # the neighboring states
-        self.end_state = [0, num_states+1]      # the terminal states
+        self.states = np.arange(1, num_states+1)        # all states except terminal state
+        self.start_state = int(num_states / 2)          # the start state
+        self.end_state = [0, num_states + 1]            # the terminal states
+        self.action = [-1, 1]                           # right:1, left:-1
+        self.neighbors = 100                            # the neighboring states
 
     def select_action(self):
         """to select randomly an action"""
@@ -31,7 +31,7 @@ class RandomWalk(object):
         """to get the next state and reward"""
         move_step = np.random.randint(1, self.neighbors+1)          # the step size of moving
         move_step *= action
-        next_state = state + move_step          # the next state
+        next_state = state + move_step              # the next state
         next_state = max(min(next_state, self.end_state[1]), 0)
 
         if next_state == self.end_state[0]:                     # terminating on the left
@@ -43,16 +43,14 @@ class RandomWalk(object):
         return next_state, reward
 
     def get_state_value(self, state):
-        """to get the state value"""
-        if state in self.end_state:
-            return 0
+        """to get the state value except for terminal states"""
         group_idx = (state - 1) // self.group_size
-        return self.parameters[group_idx]
+        return self.group_value[group_idx]
     
-    def update_parameters(self, state, delta):
-        """to update the parameters"""
+    def update_group_value(self, state, delta):
+        """to update the group_value"""
         group_idx = (state - 1) // self.group_size
-        self.parameters[group_idx] += delta
+        self.group_value[group_idx] += delta
 
     def gradient_monte_carlo(self, state_distribution):
         """ the gradient-descent version of Monte Carlo state-value prediction"""
@@ -67,14 +65,14 @@ class RandomWalk(object):
 
         for stat in trajectory[:-1]:
             delta = self.alpha * (reward - self.get_state_value(stat))
-            self.update_parameters(stat, delta)
+            self.update_group_value(stat, delta)
             state_distribution[stat] += 1
 
 
-def compute_value_dp(test_class):
+def dp_compute_value(test_class):
     """using Dynamic programming to find the true state values"""
     value = np.arange(-test_class.end_state[1], test_class.end_state[1] + 1, 2) / test_class.end_state[1]
-    print("Starting......")
+    print("Starting computing......")
     while True:
         value_temp = value.copy()
         for state in test_class.states:
@@ -96,7 +94,7 @@ if __name__ == "__main__":
     episodes = 100000
     test_exam = RandomWalk()
 
-    true_value = compute_value_dp(test_class=test_exam)
+    true_value = dp_compute_value(test_class=test_exam)
     distribution = np.zeros(test_exam.num_states + len(test_exam.end_state))
     for itr in tqdm(range(episodes)):
         test_exam.gradient_monte_carlo(distribution)
@@ -122,6 +120,6 @@ if __name__ == "__main__":
     plt.show()
 
     plt.close()
-
+    print("Completed!!!You can check it in 'images' directory")
 
 
