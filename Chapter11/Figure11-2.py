@@ -70,11 +70,9 @@ class BairdCounterExample(object):
         delta = 0           # track the difference between expected value and estimate value
         for stat in self.states:
             returns = 0     # track the expected returns
+            # calculate returns
+            returns += self.reward + self.discount*np.dot(self.features[self.lower_state, :], weight)
             # compute Bellman error
-            for next_stat in self.states:
-                if next_stat == self.lower_state:
-                    # calculate returns
-                    returns += self.reward + self.discount*np.dot(self.features[next_stat, :], weight)
             error = returns - np.dot(self.features[stat, :], weight)
             delta += error*self.features[stat, :]
         # update the weight vector
@@ -112,8 +110,8 @@ if __name__ == "__main__":
         plt.ylabel("Weight Value")
         plt.title(title[i])
         plt.legend()
-        plt.savefig("./images/Figure11-"+str(i + 1)+".png")
+        plt.savefig("./images/Figure11-2-"+str(i + 1)+".png")
         plt.show()
-    plt.close()
+        plt.close()
     print("Completed!!!You can check it in 'images' directory")
 
